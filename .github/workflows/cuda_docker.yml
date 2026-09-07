@@ -6,8 +6,8 @@ jobs:
     steps:
       - name: Pull and save
         run: |
-          docker pull nvidia/cuda:12.4.1-cudnn9-devel-ubuntu20.04
-          docker save nvidia/cuda:12.4.1-cudnn9-devel-ubuntu20.04 > cuda-image.tar
+          docker pull nvidia/cuda:12.4.1-cudnn-devel-ubuntu20.04
+          docker save nvidia/cuda:12.4.1-cudnn-devel-ubuntu20.04 > cuda-image.tar
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
