@@ -1,15 +1,81 @@
-name: Export CUDA Image
-on: workflow_dispatch
+name: Build Model Zoo image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version tag, for example v0.4.3"
+        required: true
+        default: v0.4.3
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: siengine-model-zoo
+  VERSION: ${{ github.event.inputs.version || github.ref_name || 'v0.4.3' }}
+
 jobs:
-  export:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
+
     steps:
-      - name: Pull and save
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
         run: |
-          docker pull nvidia/cuda:12.4.1-cudnn-devel-ubuntu20.04
-          docker save nvidia/cuda:12.4.1-cudnn-devel-ubuntu20.04 > cuda-image.tar
-      - name: Upload artifact
+          set -euo pipefail
+          docker build --progress=plain \
+            -f tools/docker/Dockerfile \
+            -t "siengine-model-zoo-build:${VERSION}" \
+            tools/docker
+
+      - name: Tag before save
+        run: |
+          set -euo pipefail
+          # The tag saved in the archive becomes the name customers see after
+          # "docker load". Save under the customer-facing name, not the build name.
+          docker tag \
+            "siengine-model-zoo-build:${VERSION}" \
+            "${IMAGE_NAME}:${VERSION}"
+          docker image inspect "${IMAGE_NAME}:${VERSION}" --format '{{.Id}}'
+
+      - name: Save compressed image
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zstd
+          docker save "${IMAGE_NAME}:${VERSION}" \
+            | zstd -T0 -3 -o "siengine-model-zoo-${VERSION}.tar.zst"
+          split -b 1900M -d -a 2 \
+            "siengine-model-zoo-${VERSION}.tar.zst" \
+            "siengine-model-zoo-${VERSION}.tar.zst.part-"
+          ls -lh siengine-model-zoo-${VERSION}.tar.zst*
+
+      - name: Upload image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cuda-image
-          path: cuda-image.tar
+          name: siengine-model-zoo-${{ env.VERSION }}-image
+          path: |
+            siengine-model-zoo-${{ env.VERSION }}.tar.zst.part-*
+          if-no-files-found: error
+          retention-days:
